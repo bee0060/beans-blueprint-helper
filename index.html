@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>拼豆图纸生成助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+
+        .control-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 10px 0;
+            align-items: center;
+        }
+
+        .control-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1 1 120px;
+        }
+
+        .canvas-container {
+            border: 2px solid #ddd;
+            background-color: #fff;
+            overflow: auto;
+            max-width: 100%;
+            max-height: 500px;
+            position: relative;
+        }
+
+        .result-tabs {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .result-tab {
+            padding: 8px 16px;
+            background: #eee;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .result-tab.active {
+            background: #42b983;
+            color: white;
+        }
+
+        .result-container {
+            display: none;
+        }
+
+        .result-container.active {
+            display: block;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .mobile-tip {
+            color: #666;
+            font-size: 0.875rem;
+            margin-top: 5px;
+            display: none;
+        }
+
+        #codeCanvasContainer {
+            position: relative;
+        }
+
+        #codeImage {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        #codeCanvas {
+            position: relative;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* 汇总信息样式 */
+        .summary-info {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 30px;
+            font-size: 0.9rem;
+        }
+
+        .summary-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .summary-row {
+            margin: 5px 0;
+        }
+
+        .color-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .color-stat-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 8px;
+            background: #f0f0f0;
+            border-radius: 3px;
+        }
+
+        .color-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-tip {
+                display: block;
+            }
+
+            .color-stats {
+                gap: 5px;
+            }
+
+            .color-stat-item {
+                font-size: 0.8rem;
+                padding: 2px 5px;
+            }
+        }
+    </style>
+</head>
+
+<body class="p-5 max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold mb-5 text-center">拼豆图纸生成助手</h1>
+
+    <!-- 上传区域 -->
+    <div class="mb-5">
+        <input type="file" id="imageUpload" accept="image/*" class="mb-3">
+    </div>
+
+    <!-- 控制参数区域 -->
+    <div class="control-group bg-white p-4 rounded-lg shadow-sm mb-5">
+        <div class="control-item">
+            <label for="sampleDiameter" class="font-medium text-sm">取色直径（像素）</label>
+            <input type="number" id="sampleDiameter" value="11" min="1"
+                class="w-full p-2 border border-gray-300 rounded">
+        </div>
+        <div class="control-item">
+            <button id="convertBtn" disabled class="px-4 py-2 bg-blue-500 text-white rounded mt-6">一键转换</button>
+        </div>
+        <div class="control-item">
+            <button id="exportBtn" disabled class="px-4 py-2 bg-green-500 text-white rounded mt-6">导出A4图纸</button>
+            <div class="mobile-tip">移动端：长按带色号版图纸可保存</div>
+        </div>
+    </div>
+
+    <!-- 原始图片预览 -->
+    <div class="mb-5">
+        <h3 class="font-semibold mb-2">原始图片预览</h3>
+        <div class="canvas-container" id="originalCanvasContainer">
+            <canvas id="originalCanvas"></canvas>
+        </div>
+    </div>
+
+    <!-- 结果切换标签 -->
+    <div class="result-tabs">
+        <div class="result-tab active" data-target="colorResult">仅颜色版</div>
+        <div class="result-tab" data-target="codeResult">带色号版</div>
+    </div>
+
+    <!-- 仅颜色版结果 -->
+    <div class="result-container active" id="colorResult">
+        <h3 class="font-semibold mb-2">仅颜色版拼豆图纸</h3>
+        <div class="canvas-container" id="colorCanvasContainer">
+            <canvas id="colorCanvas"></canvas>
+        </div>
+    </div>
+
+    <!-- 带色号版结果及汇总信息 -->
+    <div class="result-container" id="codeResult">
+        <h3 class="font-semibold mb-2">带色号版拼豆图纸</h3>
+        <div class="canvas-container" id="codeCanvasContainer">
+            <img id="codeImage" alt="带色号拼豆图纸">
+            <canvas id="codeCanvas"></canvas>
+        </div>
+
+        <!-- 汇总信息区域 -->
+        <div class="summary-info" id="summaryInfo">
+            <div class="summary-title">拼豆用量汇总</div>
+            <div class="summary-row">图纸尺寸：<span id="drawingSize">-- × --</span> 格</div>
+            <div class="summary-row">总拼豆数量：<span id="totalBeads">--</span> 粒</div>
+            <div class="summary-row">各颜色用量：</div>
+            <div class="color-stats" id="colorStats">
+                <!-- 颜色用量会动态生成在这里 -->
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { beadColors } from './beadColors.js'
+
+        // A4纸尺寸常量（像素，300dpi）
+        const A4_WIDTH = 2480;   // A4宽度（300dpi）
+        const A4_HEIGHT = 3508;  // A4高度（300dpi）
+        const MARGIN = 100;      // 页边距（像素）
+
+        // 全局变量
+        let colorUsage = {};
+        let drawingDimensions = { width: 0, height: 0 };
+        let beadLayout = [];
+
+        // DOM元素缓存
+        const imageUpload = document.getElementById('imageUpload');
+        const sampleDiameter = document.getElementById('sampleDiameter');
+        const convertBtn = document.getElementById('convertBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const originalCanvas = document.getElementById('originalCanvas');
+        const originalCtx = originalCanvas.getContext('2d');
+        const colorCanvas = document.getElementById('colorCanvas');
+        const colorCtx = colorCanvas.getContext('2d');
+        const codeCanvas = document.getElementById('codeCanvas');
+        const codeCtx = codeCanvas.getContext('2d');
+        const codeImage = document.getElementById('codeImage');
+        const resultTabs = document.querySelectorAll('.result-tab');
+        const resultContainers = document.querySelectorAll('.result-container');
+
+        // 初始化事件监听
+        function initEventListeners() {
+            imageUpload.addEventListener('change', handleImageUpload);
+            convertBtn.addEventListener('click', handleConvert);
+            exportBtn.addEventListener('click', exportA4Image);
+            resultTabs.forEach(tab => tab.addEventListener('click', handleTabSwitch));
+            codeCanvas.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                if (window.innerWidth <= 768) alert('请长按图片选择“保存图片”');
+            });
+        }
+
+        // 图片上传处理
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => {
+                    originalCanvas.width = img.width;
+                    originalCanvas.height = img.height;
+                    originalCtx.drawImage(img, 0, 0);
+                    convertBtn.disabled = false;
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 转换处理
+        function handleConvert() {
+            colorUsage = {};
+            beadLayout = [];
+            const sampleSize = parseInt(sampleDiameter.value) || 11;
+            const imgData = originalCtx.getImageData(0, 0, originalCanvas.width, originalCanvas.height);
+            const pixels = imgData.data;
+
+            const gridCols = Math.ceil(originalCanvas.width / sampleSize);
+            const gridRows = Math.ceil(originalCanvas.height / sampleSize);
+            drawingDimensions = { width: gridCols, height: gridRows };
+
+            // 预览画布尺寸（临时固定，导出时重新计算）
+            const BLOCK_SIZE_PREVIEW = 20;
+            const previewWidth = gridCols * BLOCK_SIZE_PREVIEW;
+            const previewHeight = gridRows * BLOCK_SIZE_PREVIEW;
+            [colorCanvas, codeCanvas].forEach(canvas => {
+                canvas.width = previewWidth;
+                canvas.height = previewHeight;
+            });
+
+            // 生成拼豆布局
+            for (let row = 0; row < gridRows; row++) {
+                const rowData = [];
+                for (let col = 0; col < gridCols; col++) {
+                    const sampleX = Math.min(col * sampleSize + Math.floor(sampleSize / 2), originalCanvas.width - 1);
+                    const sampleY = Math.min(row * sampleSize + Math.floor(sampleSize / 2), originalCanvas.height - 1);
+
+                    let closestColor = beadColors.find(c => c.code === 'C2') || beadColors[0];
+                    if (sampleX >= 0 && sampleY >= 0) {
+                        const pixelIndex = (sampleY * originalCanvas.width + sampleX) * 4;
+                        const [r, g, b] = [pixels[pixelIndex], pixels[pixelIndex + 1], pixels[pixelIndex + 2]];
+                        closestColor = findClosestColor(r, g, b);
+                    }
+
+                    // 预览时也应用文字颜色优化
+                    const textColor = getContrastTextColor(closestColor.rgb);
+                    fillGrid(colorCtx, col, row, BLOCK_SIZE_PREVIEW, closestColor.hex, '');
+                    fillGrid(codeCtx, col, row, BLOCK_SIZE_PREVIEW, closestColor.hex, closestColor.code, textColor);
+                    updateColorUsage(closestColor.code);
+                    rowData.push({ ...closestColor, textColor }); // 保存文字颜色信息
+                }
+                beadLayout.push(rowData);
+            }
+
+            updateSummaryInfo();
+            codeImage.src = codeCanvas.toDataURL('image/png');
+            codeImage.width = codeCanvas.width;
+            codeImage.height = codeCanvas.height;
+            exportBtn.disabled = false;
+        }
+
+        // 标签切换处理
+        function handleTabSwitch() {
+            resultTabs.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            const target = this.getAttribute('data-target');
+            resultContainers.forEach(c => c.classList.remove('active'));
+            document.getElementById(target).classList.add('active');
+        }
+
+        // 颜色匹配逻辑
+        function findClosestColor(r, g, b) {
+            let minDistance = Infinity;
+            let closestColor = beadColors[0];
+            for (const color of beadColors) {
+                const [cr, cg, cb] = color.rgb;
+                const distance = Math.sqrt(Math.pow(r - cr, 2) + Math.pow(g - cg, 2) + Math.pow(b - cb, 2));
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestColor = color;
+                }
+            }
+            return closestColor;
+        }
+
+        // 核心优化：根据色块颜色明暗计算最佳文字颜色（黑/白）
+        function getContrastTextColor(rgb) {
+            const [r, g, b] = rgb;
+            // 计算颜色亮度（使用相对 luminance 公式）
+            const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+            // 亮度低于0.5用白色文字，反之用黑色
+            return luminance < 0.5 ? '#ffffff' : '#000000';
+        }
+
+        // 更新颜色用量统计
+        function updateColorUsage(code) {
+            colorUsage[code] = (colorUsage[code] || 0) + 1;
+        }
+
+        // 更新汇总信息显示
+        function updateSummaryInfo() {
+            document.getElementById('drawingSize').textContent = `${drawingDimensions.width} × ${drawingDimensions.height}`;
+            const total = Object.values(colorUsage).reduce((a, b) => a + b, 0);
+            document.getElementById('totalBeads').textContent = total;
+
+            const colorStatsContainer = document.getElementById('colorStats');
+            colorStatsContainer.innerHTML = '';
+            const sortedCodes = Object.keys(colorUsage).sort((a, b) => {
+                if (a[0] !== b[0]) return a[0].localeCompare(b[0]);
+                return parseInt(a.slice(1)) - parseInt(b.slice(1));
+            });
+
+            sortedCodes.forEach(code => {
+                const color = beadColors.find(c => c.code === code);
+                if (!color) return;
+                const statItem = document.createElement('div');
+                statItem.className = 'color-stat-item';
+                statItem.innerHTML = `
+            <span class="color-swatch" style="background-color: ${color.hex};"></span>
+            <span>${code}: ${colorUsage[code]}粒</span>
+        `;
+                colorStatsContainer.appendChild(statItem);
+            });
+        }
+
+        // 填充单个拼豆格子（新增textColor参数控制文字颜色）
+        function fillGrid(ctx, col, row, size, color, code, textColor = '#000000') {
+            const x = col * size;
+            const y = row * size;
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, size, size);
+            ctx.strokeStyle = '#eee';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, size, size);
+
+            if (code) {
+                ctx.fillStyle = textColor; // 使用计算后的文字颜色
+                ctx.font = `${Math.max(8, Math.floor(size / 2))}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(code, x + size / 2, y + size / 2);
+            }
+        }
+
+        // 导出A4尺寸图纸
+        function exportA4Image() {
+            // 1. 计算汇总信息实际占用高度
+            const summaryHeight = calculateSummaryHeight();
+
+            // 2. 智能判断纸张方向
+            const drawingAspectRatio = drawingDimensions.width / drawingDimensions.height;
+            const availableHeight = A4_HEIGHT - MARGIN * 2 - summaryHeight;
+            const availableWidth = A4_WIDTH - MARGIN * 2;
+            const availableAspectRatio = availableWidth / availableHeight;
+
+            const isLandscape = drawingAspectRatio > availableAspectRatio;
+            let [paperWidth, paperHeight] = isLandscape
+                ? [A4_HEIGHT, A4_WIDTH]  // 横向
+                : [A4_WIDTH, A4_HEIGHT]; // 纵向
+
+            // 3. 计算图纸可用空间
+            const drawingAreaWidth = paperWidth - MARGIN * 2;
+            const drawingAreaHeight = paperHeight - MARGIN * 2 - summaryHeight;
+
+            // 4. 计算最佳格子尺寸
+            const maxBlockWidth = drawingAreaWidth / drawingDimensions.width;
+            const maxBlockHeight = drawingAreaHeight / drawingDimensions.height;
+            const blockSize = Math.floor(Math.min(maxBlockWidth, maxBlockHeight));
+
+            // 5. 计算图纸实际尺寸
+            const drawingWidth = drawingDimensions.width * blockSize;
+            const drawingHeight = drawingDimensions.height * blockSize;
+
+            // 6. 创建A4画布
+            const a4Canvas = document.createElement('canvas');
+            a4Canvas.width = paperWidth;
+            a4Canvas.height = paperHeight;
+            const a4Ctx = a4Canvas.getContext('2d');
+            a4Ctx.fillStyle = '#ffffff';
+            a4Ctx.fillRect(0, 0, paperWidth, paperHeight);
+
+            // 7. 绘制图纸（居中放置）
+            const drawingX = MARGIN + (drawingAreaWidth - drawingWidth) / 2;
+            const drawingY = MARGIN + (drawingAreaHeight - drawingHeight) / 2;
+            drawBeadLayout(a4Ctx, drawingX, drawingY, blockSize);
+
+            // 8. 绘制汇总信息（底部放置）
+            const summaryY = paperHeight - MARGIN - summaryHeight;
+            drawSummary(a4Ctx, MARGIN, summaryY, paperWidth - MARGIN * 2);
+
+            // 9. 下载图片
+            const link = document.createElement('a');
+            link.download = `拼豆图纸_${isLandscape ? '横向' : '纵向'}.png`;
+            link.href = a4Canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // 计算汇总信息所需高度
+        function calculateSummaryHeight() {
+            const sortedCodes = Object.keys(colorUsage).sort((a, b) => {
+                if (a[0] !== b[0]) return a[0].localeCompare(b[0]);
+                return parseInt(a.slice(1)) - parseInt(b.slice(1));
+            });
+            const itemsPerRow = 5;
+            const rows = Math.ceil(sortedCodes.length / itemsPerRow);
+            return 40 + 30 + 30 + rows * 30;
+        }
+
+        // 绘制拼豆布局（应用文字颜色优化）
+        function drawBeadLayout(ctx, startX, startY, blockSize) {
+            beadLayout.forEach((row, rowIndex) => {
+                row.forEach((color, colIndex) => {
+                    const x = startX + colIndex * blockSize;
+                    const y = startY + rowIndex * blockSize;
+                    ctx.fillStyle = color.hex;
+                    ctx.fillRect(x, y, blockSize, blockSize);
+                    ctx.strokeStyle = '#eee';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, blockSize, blockSize);
+
+                    // 绘制色号（使用预计算的文字颜色）
+                    if (blockSize >= 12) {
+                        ctx.fillStyle = color.textColor; // 应用自动计算的文字颜色
+                        ctx.font = `${Math.floor(blockSize / 2)}px Arial`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(color.code, x + blockSize / 2, y + blockSize / 2);
+                    }
+                });
+            });
+        }
+
+        // 绘制汇总信息（底部）
+        function drawSummary(ctx, startX, startY, maxWidth) {
+            let currentY = startY;
+            const lineHeight = 30;
+
+            // 标题
+            ctx.fillStyle = '#333';
+            ctx.font = '24px Arial bold';
+            ctx.fillText('拼豆用量汇总', startX, currentY);
+            currentY += lineHeight + 10;
+
+            // 基本信息
+            ctx.font = '20px Arial';
+            ctx.fillText(`图纸尺寸：${drawingDimensions.width} × ${drawingDimensions.height} 格`, startX, currentY);
+            currentY += lineHeight;
+
+            const total = Object.values(colorUsage).reduce((a, b) => a + b, 0);
+            ctx.fillText(`总拼豆数量：${total} 粒`, startX, currentY);
+            currentY += lineHeight + 10;
+
+            // 颜色统计
+            ctx.fillText('各颜色用量：', startX, currentY);
+            currentY += lineHeight;
+
+            const sortedCodes = Object.keys(colorUsage).sort((a, b) => {
+                if (a[0] !== b[0]) return a[0].localeCompare(b[0]);
+                return parseInt(a.slice(1)) - parseInt(b.slice(1));
+            });
+
+            const itemsPerRow = 5;
+            const itemWidth = maxWidth / itemsPerRow;
+            sortedCodes.forEach((code, index) => {
+                const color = beadColors.find(c => c.code === code);
+                if (!color) return;
+
+                const row = Math.floor(index / itemsPerRow);
+                const col = index % itemsPerRow;
+                const x = startX + col * itemWidth;
+                const y = currentY + row * lineHeight;
+
+                // 颜色块
+                ctx.fillStyle = color.hex;
+                ctx.fillRect(x, y, 20, 20);
+
+                // 汇总信息文字颜色也做对比优化
+                const textColor = getContrastTextColor(color.rgb);
+                ctx.fillStyle = textColor;
+                ctx.fillText(`${code}: ${colorUsage[code]}粒`, x + 30, y + 15);
+            });
+        }
+
+        // 初始化
+        window.addEventListener('load', initEventListeners);
+    </script>
+</body>
+
+</html>
